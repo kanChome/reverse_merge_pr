@@ -1,9 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${1:-}"
+REPO=""
+DRY_RUN="0"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN="1"
+      shift
+      ;;
+    -*)
+      echo "未知のオプションです: $1"
+      echo "Usage: $0 owner/repo [--dry-run]"
+      exit 1
+      ;;
+    *)
+      if [[ -z "$REPO" ]]; then
+        REPO="$1"
+      else
+        echo "Usage: $0 owner/repo [--dry-run]"
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
 if [[ -z "$REPO" ]]; then
-  echo "Usage: $0 owner/repo"
+  echo "Usage: $0 owner/repo [--dry-run]"
   exit 1
 fi
 
@@ -15,18 +40,21 @@ require_cmd() {
 require_cmd git
 require_cmd gh
 
+# base..head の差分が 下流（base）側に存在するか判定
 need_pr() {
   local base="$1" head="$2"
   git rev-list --left-right --count "origin/${base}...origin/${head}" \
     | awk '{print ($1 > 0) ? "yes" : "no"}'
 }
 
+# 既存オープンPRがあれば PR番号を返す。なければ空文字。
 find_open_pr() {
   local base="$1" head="$2"
   gh pr list -R "$REPO" --base "$base" --head "$head" --state open \
     --json number --jq '.[0].number' 2>/dev/null || true
 }
 
+# PRを作成（必要なら）。URLを出力。
 create_pr_if_needed() {
   local base="$1" head="$2" title="$3" body="$4"
 
@@ -46,7 +74,8 @@ create_pr_if_needed() {
     return 0
   fi
 
-  if [[ "${DRY_RUN:-}" == "1" ]]; then
+  # 新規作成
+  if [[ "$DRY_RUN" == "1" ]]; then
     log "[DRY_RUN] would create PR: ${head} -> ${base}"
     echo "(dry-run) https://github.com/${REPO}/pull/NEW"
     return 0
@@ -73,4 +102,4 @@ main() {
     "自動生成PR: stagingの最新をdevelopmentに取り込みます。"
 }
 
-main "$@"
+main
